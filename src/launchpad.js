@@ -1,286 +1,224 @@
 /**
- * Token22 Launchpad - Launch & Trading Logic
+ * Token22 Launchpad Core - For actual blockchain transactions
  * 
- * Handles:
- * - Creating new token launches
- * - Bonding curve buy/sell
- * - Tracking launch state
+ * This module contains the real Token22 creation logic.
+ * Currently server.js runs in demo mode, but this can be 
+ * integrated when ready to deploy on mainnet.
  */
 
 const {
-  Connection,
-  Keypair,
-  PublicKey,
-  Transaction,
-  SystemProgram,
-  sendAndConfirmTransaction,
-  LAMPORTS_PER_SOL,
+    Connection,
+    Keypair,
+    PublicKey,
+    SystemProgram,
+    Transaction,
+    TransactionInstruction,
+    LAMPORTS_PER_SOL,
 } = require('@solana/web3.js');
 
 const {
-  TOKEN_2022_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
-  createAssociatedTokenAccountInstruction,
-  createTransferCheckedInstruction,
-  getAccount,
+    TOKEN_2022_PROGRAM_ID,
+    ExtensionType,
+    createInitializeMintInstruction,
+    createInitializeTransferFeeConfigInstruction,
+    getMintLen,
+    createMint,
+    mintTo,
+    getAssociatedTokenAddressSync,
+    createAssociatedTokenAccountInstruction,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
 } = require('@solana/spl-token');
 
-const { createToken22, calculatePrice, TOTAL_SUPPLY, DECIMALS } = require('./token22');
-
-// In-memory storage (replace with DB in production)
-const launches = new Map();
-
-/**
- * Launch state
- */
-class Launch {
-  constructor({
-    mint,
-    name,
-    symbol,
-    creator,
-    createdAt,
-    poolWallet,
-    poolSol = 0,
-    poolTokens = TOTAL_SUPPLY * 0.8, // 80% for bonding curve
-    soldTokens = 0,
-  }) {
-    this.mint = mint;
-    this.name = name;
-    this.symbol = symbol;
-    this.creator = creator;
-    this.createdAt = createdAt;
-    this.poolWallet = poolWallet;
-    this.poolSol = poolSol;
-    this.poolTokens = poolTokens;
-    this.soldTokens = soldTokens;
-    this.migrated = false;
-  }
-  
-  get marketCap() {
-    const price = calculatePrice(this.soldTokens, TOTAL_SUPPLY);
-    return price * TOTAL_SUPPLY;
-  }
-  
-  get pricePerToken() {
-    return calculatePrice(this.soldTokens, TOTAL_SUPPLY);
-  }
-  
-  toJSON() {
-    return {
-      mint: this.mint,
-      name: this.name,
-      symbol: this.symbol,
-      creator: this.creator,
-      createdAt: this.createdAt,
-      poolSol: this.poolSol,
-      poolTokens: this.poolTokens,
-      soldTokens: this.soldTokens,
-      marketCap: this.marketCap,
-      pricePerToken: this.pricePerToken,
-      migrated: this.migrated,
-    };
-  }
-}
+// Config
+const TRANSFER_FEE_BASIS_POINTS = 100; // 1%
+const MAX_FEE = BigInt(1_000_000_000); // Max fee per transfer
+const TOTAL_SUPPLY = 1_000_000_000; // 1 billion tokens
+const DECIMALS = 9;
 
 /**
- * Create a new token launch
+ * Create a Token22 mint with transfer fee extension
  */
-async function createLaunch({
-  connection,
-  payer,
-  name,
-  symbol,
-  description,
-  image,
-}) {
-  // Create pool wallet for this launch
-  const poolWallet = Keypair.generate();
-  
-  // Create the Token22 with transfer fees
-  const tokenResult = await createToken22({
+async function createToken22Mint({
     connection,
     payer,
     name,
     symbol,
-    uri: image || '',
-    creatorWallet: payer.publicKey,
-  });
-  
-  // Create launch record
-  const launch = new Launch({
-    mint: tokenResult.mint,
-    name,
-    symbol,
-    creator: payer.publicKey.toBase58(),
-    createdAt: new Date().toISOString(),
-    poolWallet: poolWallet.publicKey.toBase58(),
-  });
-  
-  launches.set(tokenResult.mint, launch);
-  
-  console.log(`\n🎉 Launch created: ${name} (${symbol})`);
-  console.log(`   Mint: ${tokenResult.mint}`);
-  console.log(`   Initial MC: $${launch.marketCap.toLocaleString()}`);
-  
-  return launch.toJSON();
-}
-
-/**
- * Buy tokens from bonding curve
- */
-async function buyTokens({
-  connection,
-  buyer,
-  mintAddress,
-  solAmount,
+    description,
+    image,
+    transferFeeConfigAuthority,
+    withdrawWithheldAuthority,
 }) {
-  const launch = launches.get(mintAddress);
-  if (!launch) throw new Error('Launch not found');
-  if (launch.migrated) throw new Error('Launch has migrated to Raydium');
-  
-  // Calculate tokens to receive
-  const currentPrice = launch.pricePerToken;
-  const solPrice = 150; // TODO: Get from oracle
-  const usdValue = solAmount * solPrice;
-  const tokensToReceive = Math.floor(usdValue / currentPrice);
-  
-  if (tokensToReceive > launch.poolTokens) {
-    throw new Error('Not enough tokens in pool');
-  }
-  
-  console.log(`\n💰 Buy order: ${solAmount} SOL → ${tokensToReceive.toLocaleString()} ${launch.symbol}`);
-  
-  const mint = new PublicKey(mintAddress);
-  
-  // Get or create buyer's token account
-  const buyerAta = getAssociatedTokenAddressSync(
-    mint,
-    buyer.publicKey,
-    false,
-    TOKEN_2022_PROGRAM_ID
-  );
-  
-  // Get pool's token account
-  const poolAta = getAssociatedTokenAddressSync(
-    mint,
-    new PublicKey(launch.creator),
-    false,
-    TOKEN_2022_PROGRAM_ID
-  );
-  
-  const tx = new Transaction();
-  
-  // Create ATA if needed
-  try {
-    await getAccount(connection, buyerAta, 'confirmed', TOKEN_2022_PROGRAM_ID);
-  } catch {
-    tx.add(createAssociatedTokenAccountInstruction(
-      buyer.publicKey,
-      buyerAta,
-      buyer.publicKey,
-      mint,
-      TOKEN_2022_PROGRAM_ID
-    ));
-  }
-  
-  // Transfer tokens from pool to buyer
-  tx.add(createTransferCheckedInstruction(
-    poolAta,
-    mint,
-    buyerAta,
-    new PublicKey(launch.creator), // Pool authority
-    BigInt(tokensToReceive) * BigInt(10 ** DECIMALS),
-    DECIMALS,
-    [],
-    TOKEN_2022_PROGRAM_ID
-  ));
-  
-  // TODO: Transfer SOL to pool (needs proper escrow)
-  
-  // Update launch state
-  launch.soldTokens += tokensToReceive;
-  launch.poolTokens -= tokensToReceive;
-  launch.poolSol += solAmount;
-  
-  console.log(`   New price: $${launch.pricePerToken.toFixed(8)}`);
-  console.log(`   Market cap: $${launch.marketCap.toLocaleString()}`);
-  
-  // Check for migration threshold
-  if (launch.marketCap >= 69000 && !launch.migrated) {
-    console.log(`\n🚀 MIGRATION THRESHOLD REACHED!`);
-    console.log(`   Ready to migrate to Raydium...`);
-    // TODO: Implement Raydium migration
-  }
-  
-  return {
-    tokensReceived: tokensToReceive,
-    solSpent: solAmount,
-    newPrice: launch.pricePerToken,
-    marketCap: launch.marketCap,
-  };
+    const mintKeypair = Keypair.generate();
+    const mint = mintKeypair.publicKey;
+
+    // Calculate space needed for mint account with extensions
+    const mintLen = getMintLen([ExtensionType.TransferFeeConfig]);
+    const lamports = await connection.getMinimumBalanceForRentExemption(mintLen);
+
+    const transaction = new Transaction().add(
+        // Create mint account
+        SystemProgram.createAccount({
+            fromPubkey: payer.publicKey,
+            newAccountPubkey: mint,
+            space: mintLen,
+            lamports,
+            programId: TOKEN_2022_PROGRAM_ID,
+        }),
+        // Initialize transfer fee config
+        createInitializeTransferFeeConfigInstruction(
+            mint,
+            transferFeeConfigAuthority || payer.publicKey,
+            withdrawWithheldAuthority || payer.publicKey,
+            TRANSFER_FEE_BASIS_POINTS,
+            MAX_FEE,
+            TOKEN_2022_PROGRAM_ID
+        ),
+        // Initialize mint
+        createInitializeMintInstruction(
+            mint,
+            DECIMALS,
+            payer.publicKey, // Mint authority
+            null, // Freeze authority (none)
+            TOKEN_2022_PROGRAM_ID
+        )
+    );
+
+    // Sign and send
+    transaction.feePayer = payer.publicKey;
+    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    transaction.partialSign(mintKeypair);
+
+    const signature = await connection.sendTransaction(transaction, [payer, mintKeypair]);
+    await connection.confirmTransaction(signature, 'confirmed');
+
+    return {
+        mint: mint.toBase58(),
+        signature,
+        decimals: DECIMALS,
+        transferFeeBps: TRANSFER_FEE_BASIS_POINTS,
+    };
 }
 
 /**
- * Sell tokens back to bonding curve
+ * Mint initial supply to creator
  */
-async function sellTokens({
-  connection,
-  seller,
-  mintAddress,
-  tokenAmount,
+async function mintInitialSupply({
+    connection,
+    payer,
+    mint,
+    recipient,
+    amount = TOTAL_SUPPLY,
 }) {
-  const launch = launches.get(mintAddress);
-  if (!launch) throw new Error('Launch not found');
-  if (launch.migrated) throw new Error('Launch has migrated to Raydium');
-  
-  // Calculate SOL to receive
-  const currentPrice = launch.pricePerToken;
-  const solPrice = 150; // TODO: Get from oracle
-  const usdValue = tokenAmount * currentPrice;
-  const solToReceive = usdValue / solPrice;
-  
-  if (solToReceive > launch.poolSol) {
-    throw new Error('Not enough SOL in pool');
-  }
-  
-  console.log(`\n💸 Sell order: ${tokenAmount.toLocaleString()} ${launch.symbol} → ${solToReceive.toFixed(4)} SOL`);
-  
-  // Update launch state
-  launch.soldTokens -= tokenAmount;
-  launch.poolTokens += tokenAmount;
-  launch.poolSol -= solToReceive;
-  
-  console.log(`   New price: $${launch.pricePerToken.toFixed(8)}`);
-  console.log(`   Market cap: $${launch.marketCap.toLocaleString()}`);
-  
-  return {
-    tokensSold: tokenAmount,
-    solReceived: solToReceive,
-    newPrice: launch.pricePerToken,
-    marketCap: launch.marketCap,
-  };
+    const mintPubkey = new PublicKey(mint);
+    const recipientPubkey = new PublicKey(recipient);
+
+    // Get or create associated token account
+    const ata = getAssociatedTokenAddressSync(
+        mintPubkey,
+        recipientPubkey,
+        false,
+        TOKEN_2022_PROGRAM_ID
+    );
+
+    const transaction = new Transaction();
+
+    // Check if ATA exists
+    const ataInfo = await connection.getAccountInfo(ata);
+    if (!ataInfo) {
+        transaction.add(
+            createAssociatedTokenAccountInstruction(
+                payer.publicKey,
+                ata,
+                recipientPubkey,
+                mintPubkey,
+                TOKEN_2022_PROGRAM_ID
+            )
+        );
+    }
+
+    // Mint tokens
+    transaction.add(
+        createMintToInstruction(
+            mintPubkey,
+            ata,
+            payer.publicKey,
+            BigInt(amount) * BigInt(10 ** DECIMALS),
+            [],
+            TOKEN_2022_PROGRAM_ID
+        )
+    );
+
+    const signature = await connection.sendTransaction(transaction, [payer]);
+    await connection.confirmTransaction(signature, 'confirmed');
+
+    return { signature, ata: ata.toBase58() };
 }
 
 /**
- * Get all active launches
+ * Remove mint authority (make supply fixed)
  */
-function getLaunches() {
-  return Array.from(launches.values()).map(l => l.toJSON());
+async function removeMintAuthority({
+    connection,
+    payer,
+    mint,
+}) {
+    const { createSetAuthorityInstruction, AuthorityType } = require('@solana/spl-token');
+    
+    const mintPubkey = new PublicKey(mint);
+    
+    const transaction = new Transaction().add(
+        createSetAuthorityInstruction(
+            mintPubkey,
+            payer.publicKey,
+            AuthorityType.MintTokens,
+            null, // Remove authority
+            [],
+            TOKEN_2022_PROGRAM_ID
+        )
+    );
+
+    const signature = await connection.sendTransaction(transaction, [payer]);
+    await connection.confirmTransaction(signature, 'confirmed');
+
+    return { signature };
 }
 
 /**
- * Get specific launch
+ * Bonding curve price calculation
+ * Price = k * supply^2 (simple quadratic curve)
  */
-function getLaunch(mintAddress) {
-  const launch = launches.get(mintAddress);
-  return launch ? launch.toJSON() : null;
+function getBondingCurvePrice(currentSupply, totalSupply) {
+    const k = 0.0000000001; // Curve steepness
+    const supplyRatio = currentSupply / totalSupply;
+    return k * Math.pow(supplyRatio * totalSupply, 2);
+}
+
+/**
+ * Calculate tokens received for SOL amount
+ */
+function calculateBuyAmount(solAmount, currentSupply, totalSupply) {
+    const currentPrice = getBondingCurvePrice(currentSupply, totalSupply);
+    // Simplified: actual implementation would integrate the curve
+    return Math.floor(solAmount / currentPrice);
+}
+
+/**
+ * Calculate SOL received for token amount
+ */
+function calculateSellAmount(tokenAmount, currentSupply, totalSupply) {
+    const currentPrice = getBondingCurvePrice(currentSupply, totalSupply);
+    // Simplified: actual implementation would integrate the curve
+    return tokenAmount * currentPrice * 0.99; // 1% fee
 }
 
 module.exports = {
-  createLaunch,
-  buyTokens,
-  sellTokens,
-  getLaunches,
-  getLaunch,
+    createToken22Mint,
+    mintInitialSupply,
+    removeMintAuthority,
+    getBondingCurvePrice,
+    calculateBuyAmount,
+    calculateSellAmount,
+    TRANSFER_FEE_BASIS_POINTS,
+    TOTAL_SUPPLY,
+    DECIMALS,
 };
