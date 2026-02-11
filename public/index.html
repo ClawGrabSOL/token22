@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token22 Launchpad</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --bg: #0a0a0a;
+      --card: #111;
+      --border: #222;
+      --text: #fff;
+      --dim: #888;
+      --muted: #555;
+      --accent: #00ff88;
+      --red: #ff4444;
+    }
+    
+    body {
+      font-family: 'Space Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+    
+    .subtitle {
+      color: var(--dim);
+      font-size: 14px;
+    }
+    
+    .features {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+      font-size: 12px;
+    }
+    
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--dim);
+    }
+    
+    .feature span {
+      color: var(--accent);
+    }
+    
+    .section {
+      margin-bottom: 50px;
+    }
+    
+    .section-title {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 3px;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .create-form {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 30px;
+      display: grid;
+      gap: 20px;
+    }
+    
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    label {
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+    
+    input, textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    
+    .btn {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      padding: 15px 30px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    
+    .btn:hover {
+      opacity: 0.8;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .launches {
+      display: grid;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+    
+    .launch-card {
+      background: var(--card);
+      padding: 25px;
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      align-items: center;
+      gap: 30px;
+    }
+    
+    .launch-info h3 {
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+    
+    .launch-info .symbol {
+      color: var(--dim);
+      font-size: 12px;
+    }
+    
+    .launch-stat {
+      text-align: right;
+    }
+    
+    .launch-stat .value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    
+    .launch-stat .label {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+    
+    .launch-stat .positive {
+      color: var(--accent);
+    }
+    
+    .trade-btn {
+      padding: 10px 20px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    
+    .trade-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    
+    .empty {
+      padding: 60px;
+      text-align: center;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--border);
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    
+    .modal.open {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 40px;
+      max-width: 400px;
+      width: 100%;
+    }
+    
+    .modal h2 {
+      margin-bottom: 30px;
+    }
+    
+    .modal-close {
+      float: right;
+      background: none;
+      border: none;
+      color: var(--dim);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    
+    footer {
+      margin-top: 80px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>TOKEN22 LAUNCHPAD</h1>
+      <p class="subtitle">Fair launch meme coins with built-in transfer fees</p>
+      
+      <div class="features">
+        <div class="feature">
+          <span>1%</span> Transfer Fee
+        </div>
+        <div class="feature">
+          <span>50%</span> Burned
+        </div>
+        <div class="feature">
+          <span>$69k</span> Migration
+        </div>
+        <div class="feature">
+          <span>∞</span> Fixed Supply
+        </div>
+      </div>
+    </header>
+    
+    <div class="section">
+      <div class="section-title">CREATE TOKEN</div>
+      <form class="create-form" id="createForm">
+        <div class="form-row">
+          <div class="form-group">
+            <label>NAME</label>
+            <input type="text" name="name" placeholder="My Meme Coin" required>
+          </div>
+          <div class="form-group">
+            <label>SYMBOL</label>
+            <input type="text" name="symbol" placeholder="MEME" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>DESCRIPTION</label>
+          <textarea name="description" placeholder="The next 1000x gem..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>IMAGE URL</label>
+          <input type="url" name="image" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>YOUR WALLET PRIVATE KEY (JSON ARRAY)</label>
+          <input type="password" name="privateKey" placeholder="[1,2,3,...]" required>
+        </div>
+        <button type="submit" class="btn">LAUNCH TOKEN →</button>
+      </form>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">LIVE LAUNCHES</div>
+      <div id="launchList" class="launches">
+        <div class="empty">No launches yet. Be the first!</div>
+      </div>
+    </div>
+    
+    <footer>
+      Built with Token22 on Solana · <a href="https://github.com/ClawGrabSOL" target="_blank">GitHub</a>
+    </footer>
+  </div>
+  
+  <!-- Trade Modal -->
+  <div class="modal" id="tradeModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <h2 id="modalTitle">Trade TOKEN</h2>
+      <form id="tradeForm">
+        <input type="hidden" name="mint" id="tradeMint">
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label>AMOUNT (SOL)</label>
+          <input type="number" name="amount" step="0.001" placeholder="0.1" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label>YOUR WALLET PRIVATE KEY</label>
+          <input type="password" name="privateKey" placeholder="[1,2,3,...]" required>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="submit" class="btn" data-action="buy" style="flex:1">BUY</button>
+          <button type="button" class="btn" data-action="sell" style="flex:1; background: var(--red);" onclick="sell()">SELL</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+    
+    async function fetchLaunches() {
+      try {
+        const res = await fetch(`${API}/api/launches`);
+        const launches = await res.json();
+        renderLaunches(launches);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    
+    function renderLaunches(launches) {
+      const list = document.getElementById('launchList');
+      
+      if (launches.length === 0) {
+        list.innerHTML = '<div class="empty">No launches yet. Be the first!</div>';
+        return;
+      }
+      
+      list.innerHTML = launches.map(l => `
+        <div class="launch-card">
+          <div class="launch-info">
+            <h3>${l.name}</h3>
+            <div class="symbol">${l.symbol} · ${l.mint.slice(0,8)}...</div>
+          </div>
+          <div class="launch-stat">
+            <div class="value">$${(l.marketCap/1000).toFixed(1)}k</div>
+            <div class="label">MARKET CAP</div>
+          </div>
+          <div class="launch-stat">
+            <div class="value positive">$${l.pricePerToken.toFixed(6)}</div>
+            <div class="label">PRICE</div>
+          </div>
+          <button class="trade-btn" onclick="openTrade('${l.mint}', '${l.symbol}')">TRADE</button>
+        </div>
+      `).join('');
+    }
+    
+    function openTrade(mint, symbol) {
+      document.getElementById('tradeMint').value = mint;
+      document.getElementById('modalTitle').textContent = `Trade ${symbol}`;
+      document.getElementById('tradeModal').classList.add('open');
+    }
+    
+    function closeModal() {
+      document.getElementById('tradeModal').classList.remove('open');
+    }
+    
+    document.getElementById('createForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'LAUNCHING...';
+      
+      try {
+        const res = await fetch(`${API}/api/launches`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: form.name.value,
+            symbol: form.symbol.value,
+            description: form.description.value,
+            image: form.image.value,
+            privateKey: form.privateKey.value,
+          }),
+        });
+        
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        
+        alert(`Token launched! Mint: ${data.mint}`);
+        form.reset();
+        fetchLaunches();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'LAUNCH TOKEN →';
+      }
+    });
+    
+    document.getElementById('tradeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const mint = form.mint.value;
+      
+      try {
+        const res = await fetch(`${API}/api/launches/${mint}/buy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            solAmount: form.amount.value,
+            privateKey: form.privateKey.value,
+          }),
+        });
+        
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        
+        alert(`Bought ${data.tokensReceived.toLocaleString()} tokens!`);
+        closeModal();
+        fetchLaunches();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+    
+    async function sell() {
+      const form = document.getElementById('tradeForm');
+      const mint = form.mint.value;
+      
+      try {
+        const res = await fetch(`${API}/api/launches/${mint}/sell`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokenAmount: form.amount.value,
+            privateKey: form.privateKey.value,
+          }),
+        });
+        
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        
+        alert(`Sold for ${data.solReceived.toFixed(4)} SOL!`);
+        closeModal();
+        fetchLaunches();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+    
+    // Close modal on outside click
+    document.getElementById('tradeModal').addEventListener('click', (e) => {
+      if (e.target.id === 'tradeModal') closeModal();
+    });
+    
+    // Initial fetch
+    fetchLaunches();
+    setInterval(fetchLaunches, 10000);
+  </script>
+</body>
+</html>
